@@ -17,7 +17,7 @@ const catalogue = [
 
 async function open(browser, lang = "en", options = {}) {
   const context = await browser.newContext({ locale: lang === "zh" ? "zh-CN" : "en-US", viewport: options.viewport || { width: 1000, height: 820 } });
-  const api = { posts: [], reads: 0, fonts: structuredClone(catalogue), fontError: false, saveError: false, delay: 0,
+  const api = { posts: [], reads: 0, fonts: structuredClone(options.list || catalogue), fontError: false, saveError: false, delay: 0,
     cur: { lang, theme: "light", textSize: 100, currency: "usd", tray: "panel", version: "0.1.0", visionModels: [], imageGenModels: [], ...options.settings } };
   const page = await context.newPage();
   page.setDefaultTimeout(5000);
@@ -26,13 +26,14 @@ async function open(browser, lang = "en", options = {}) {
   await page.route("**/*", async route => {
     const req = route.request(), url = new URL(req.url());
     const json = data => route.fulfill({ json: data });
-    if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs=${JSON.stringify({ ...api.cur, web: !!options.web, ...(options.fonts ? { fonts: true } : {}), ...(options.omarchy ? { omarchy: { mode: "dark", stamp: "one", name: "Test theme", vars: { "--font": '"Theme Font", sans-serif', "--code": '"Theme Mono", monospace' } } } : {}) })};` });
+    if (url.pathname === "/boot.js") return route.fulfill({ contentType: "text/javascript", body: `window.bootPrefs=${JSON.stringify({ ...api.cur, web: !!options.web, ...(options.omarchy ? { omarchy: { mode: "dark", stamp: "one", name: "Test theme", vars: { "--font": '"Theme Font", sans-serif', "--code": '"Theme Mono", monospace' } } } : {}) })};` });
     if (url.pathname === "/wails/runtime.js") return route.fulfill({ contentType: "text/javascript", body: "export const Window = {};" });
     if (url.pathname === "/api/fonts") {
       api.reads++;
       return api.fontError ? route.fulfill({ status: 503, body: "could not read installed fonts" }) : json(api.fonts);
     }
     if (url.pathname === "/api/settings") {
+      if (options.settingsDelay) await new Promise(r => setTimeout(r, options.settingsDelay));
       if (req.method() === "POST") {
         const body = req.postDataJSON();
         api.posts.push(body);
@@ -53,6 +54,17 @@ async function open(browser, lang = "en", options = {}) {
     try { return await route.fulfill({ body: await fs.readFile(file), contentType }); }
     catch { return route.fulfill({ status: 404, body: "not found" }); }
   });
+  // every frame's rows, from the first paint (Norcleeh: a row flashed and went)
+  if (options.frames) await page.addInitScript(() => {
+    window.__frames = [];
+    const ids = ["uiFontRow", "codeFontRow", "textSizeRow", "loginRow", "trayUsageRow"];
+    const look = () => {
+      const tray = document.getElementById("traySegs")?.parentElement;
+      if (document.getElementById("uiFontRow")) window.__frames.push(Object.fromEntries([...ids.map(id => [id, !!document.getElementById(id)?.getClientRects().length]), ["tray", !!tray?.getClientRects().length]]));
+      requestAnimationFrame(look);
+    };
+    requestAnimationFrame(look);
+  });
   await watchSettingsReads(page);
   await page.goto("http://magpie.test/?view=settings&tab=general");
   await settingsDrawn(page); // rows found are the ones that stay (#1659)
@@ -60,7 +72,8 @@ async function open(browser, lang = "en", options = {}) {
   // A real assertion, also usable against the original assets, rather than
   // a timeout or a compile error as the negative-control result.
   assert.equal(await page.locator("#uiFontRow").count(), 1, "Settings must offer an interface font picker");
-  if (!options.web || options.fonts) await page.waitForFunction(() => fontList !== null || fontListError);
+  // (a row left hidden, as before 10-28 in a nogui magpie's tab, fails at its assertion, not here)
+  await page.waitForFunction(() => fontList !== null || fontListError || document.getElementById("uiFontRow").hidden);
   await page.evaluate(async () => {
     await document.fonts.ready;
     await Promise.all(document.getAnimations().map(a => a.finished.catch(() => {})));
@@ -272,12 +285,6 @@ for (const [engine, runtime] of engines) {
       assert.match((await css(page, "body")).family, /Theme Font/);
       assert.match((await css(page, "#codeFontRow .font-preview")).family, /Consolas/);
       assert.deepEqual(errors, []);
-      // a magpie that can't read its fonts (nogui) offers none to a browser
-      const web = await open(browser, "en", { web: true, settings: { uiFont: harmony[1] } });
-      assert.equal(await web.page.locator("#uiFontRow").isVisible(), false);
-      assert.equal(web.api.reads, 0);
-      assert.doesNotMatch((await css(web.page, "body")).family, /HarmonyOS/);
-      assert.deepEqual(web.errors, []);
     } finally { await browser.close(); }
   });
 
@@ -288,7 +295,7 @@ for (const [engine, runtime] of engines) {
     try {
       const real = ["Georgia", "Courier New", "DejaVu Serif", "Liberation Serif"];
       const list = [{ name: "No Such Family Here", styles: [face("No Such Family Here")] }, ...real.map(n => ({ name: n, styles: [face(n), face(n, "Bold", 700)] }))];
-      const { page, api, errors } = await open(browser, lang, { web: true, fonts: true, settings: { uiFont: harmony[1] } });
+      const { page, api, errors } = await open(browser, lang, { web: true, settings: { uiFont: harmony[1] } });
       api.fonts = list;
       assert.equal(await page.locator("#uiFontRow").isVisible(), true, "a browser tab offers the interface font");
       assert.equal(await page.locator("#codeFontRow").isVisible(), true, "and the code font");
@@ -318,6 +325,44 @@ for (const [engine, runtime] of engines) {
       assert.doesNotMatch((await css(page, "body")).family, new RegExp(pick));
       assert.match((await css(page, "#codeFontRow .font-preview")).family, new RegExp("^\"?" + pick));
       assert.deepEqual(errors, []);
+    } finally { await browser.close(); }
+  });
+
+  // Norcleeh again, after v0.1.1788: on a refresh a row "flashed and went".
+  // A nogui magpie (Docker, magpie-cli) has no boot `fonts`, so the font
+  // rows never showed, and Text size painted until the settings hid it.
+  // The tab's rows show whatever the server can read, with System default
+  // when the browser draws none of its families, and stay through every
+  // later settings read; the app's own rows never paint at all.
+  for (const lang of ["en", "zh"]) test(`${engine} ${lang}: a browser tab's font rows show on a nogui magpie and nothing flashes`, async () => {
+    const browser = await runtime.launch();
+    try {
+      for (const fonts of [[{ name: "Georgia", styles: [face("Georgia"), face("Georgia", "Bold", 700)] }, { name: "No Such Family Here", styles: [face("No Such Family Here")] }], []]) {
+        const { page, errors, close } = await open(browser, lang, { web: true, frames: true, settingsDelay: 300, list: fonts, settings: { uiFont: harmony[1] } });
+        // what a later refresh of the settings or the state redraws
+        await page.evaluate(() => loadSettings());
+        await page.evaluate(() => new Promise(r => setTimeout(r, 500)));
+        const frames = await page.evaluate(() => window.__frames);
+        assert(frames.length > 5, "frames were watched: " + frames.length);
+        for (const row of ["uiFontRow", "codeFontRow"]) {
+          assert.equal(await page.locator("#" + row).isVisible(), true, row + " shows in a browser tab");
+          const first = frames.findIndex(f => f[row]);
+          assert(first >= 0, row + " never painted");
+          assert(frames.slice(first).every(f => f[row]), row + " painted and then went: " + frames.map(f => +f[row]).join(""));
+        }
+        for (const row of ["textSizeRow", "loginRow", "trayUsageRow", "tray"]) {
+          assert(!frames.some(f => f[row]), row + " is the app's and painted in a browser tab: " + frames.map(f => +f[row]).join(""));
+        }
+        const shown = await page.evaluate(() => fontList.map(f => f.name));
+        assert(!shown.includes("No Such Family Here"), "a family this browser doesn't draw isn't offered: " + shown);
+        await page.locator("#codeFontRow .font-family").click();
+        const names = await page.locator(".font-menu .pm-item .pm-name").allTextContents();
+        assert.equal(names[0], lang === "zh" ? "系统默认" : "System default", "System default is offered: " + names);
+        if (!fonts.length) assert.deepEqual(shown, [], "no family this browser draws");
+        await page.keyboard.press("Escape");
+        assert.deepEqual(errors, []);
+        await close();
+      }
     } finally { await browser.close(); }
   });
 

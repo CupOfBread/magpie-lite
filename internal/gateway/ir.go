@@ -175,6 +175,13 @@ type Request struct {
 	// Windows with Claude Code in WSL), so the run's own prompt describes
 	// another machine than the one the tools run on (envElsewhereNote).
 	envElsewhere bool
+	// hourMarks has the cache marks magpie adds on Anthropic's Messages
+	// (anthropicBody) last an hour: a Responses client's (Codex's), whose
+	// turns are often more than five minutes apart and whose own vendor
+	// keeps a thread's prompt cached an hour (chatGPTCold). Off when the
+	// client asked prompt_cache_retention "in_memory", or the upstream
+	// turned the ttl away (hourMarksRefused).
+	hourMarks bool
 
 	Model      string
 	System     string

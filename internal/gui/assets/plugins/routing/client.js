@@ -495,7 +495,17 @@ function routingPage(part) {
   // a prepaid wallet tells what it has left in its unit, no share (#3950):
   // "6,291 points left", whichever way the meters read
   const balText = (w) => (countFormat.format(w.balance) + " " + t(w.unit || "")).trim();
-  const quota = (w, used, left, vars) => w.balance != null ? t(left, { n: balText(w), ...vars })
+  // and what of it is lost first, as the Usage card says it from the
+  // wallet's window (runsOutText): "6,291 points left · 185 points expire
+  // 23:59", the day's batch otherwise unseen beside the total (#3964).
+  // Live only, as winsOf: a kept day's figure was read long ago
+  const lapses = (w) => {
+    const ws = day ? [] : (cardOf(w)?.windows || []).filter((x) => x.balance != null && (x.unit || "") === (w.unit || ""));
+    const x = ws.find((x) => x.balance === w.balance) || (ws.length === 1 ? ws[0] : null);
+    const out = x ? runsOutText(x) : "";
+    return out ? " · " + out : "";
+  };
+  const quota = (w, used, left, vars) => w.balance != null ? t(left, { n: balText(w), ...vars }) + lapses(w)
     : (w.limit > 0 ? quotaCount(w) + " · " : "") + t(quotaLeft ? left : used, { n: pct(share(w)), ...vars });
   const fill = (w) => Math.max(0, Math.min(100, share(w))) + "%";
   const FAIL = { rate: "rate limited", credit: "out of credit", quota: "quota used up", other: "failed", auth: "sign-in required", canceled: "canceled", foreign: "another account's reasoning", floor: "reply too short", verify: "needs verification", refused: "refused (safety filter)", shape: "request not understood", proxy: "proxy not reachable", effort: "reasoning effort not in its plan", overflow: "too long for its model", room: "reply asked past the window left", slow: "slow to start", prompt: "agent's prompt turned away", restricted: "account restricted by the vendor" };

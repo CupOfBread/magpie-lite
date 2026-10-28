@@ -77,6 +77,21 @@ func (b aBlock) MarshalJSON() ([]byte, error) {
 // ephemeral marks a prompt-cache breakpoint.
 var ephemeral = map[string]string{"type": "ephemeral"}
 
+// addedMark is the mark anthropicBody puts on what it marks for the cache:
+// Anthropic's default five minutes, or an hour for a request whose turns
+// are often further apart (Request.hourMarks) to a Claude model. A 1h write
+// costs 2x the input price where a 5m one costs 1.25x, and a read 0.1x or
+// less: one turn after a pause of 5 to 60 minutes, read where it would
+// have been written again, pays for the dearer writes of dozens of
+// requests in quick succession. Every mark it adds has the same TTL, so
+// none comes after a shorter one, which Anthropic refuses.
+func addedMark(r *Request, model string) map[string]string {
+	if r.hourMarks && anthropicModel.MatchString(model) {
+		return cacheMark1h()
+	}
+	return ephemeral
+}
+
 type aRequest struct {
 	Model        string          `json:"model"`
 	System       json.RawMessage `json:"system,omitempty"`
@@ -955,11 +970,12 @@ func anthropicBody(r *Request, model, host string, replay bool) []byte {
 	// which only adds to it, reads it from the cache; thinking can't be
 	// marked. Two marks at most, with the one Claude's sign-in adds kept
 	// within Anthropic's four.
+	mark := addedMark(r, model)
 	if n := len(msgs); n > 0 {
 		c := msgs[n-1].Content
 		for i := len(c) - 1; i >= 0; i-- {
 			if c[i].Type != "thinking" && c[i].Type != "redacted_thinking" {
-				c[i].CacheControl = ephemeral
+				c[i].CacheControl = mark
 				break
 			}
 		}
@@ -969,7 +985,7 @@ func anthropicBody(r *Request, model, host string, replay bool) []byte {
 	if r.System != "" {
 		// the tools and system prompt, the same every turn, are cached
 		// apart from the conversation
-		out["system"] = []aBlock{{Type: "text", Text: r.System, CacheControl: ephemeral}}
+		out["system"] = []aBlock{{Type: "text", Text: r.System, CacheControl: mark}}
 	}
 	maxTokens := r.MaxTokens
 	if maxTokens <= 0 {
@@ -1057,7 +1073,7 @@ func anthropicBody(r *Request, model, host string, replay bool) []byte {
 			tools = append(tools, map[string]any{"name": t.Name, "description": t.Description, "input_schema": schema})
 		}
 		if r.System == "" && len(tools) > 0 {
-			tools[len(tools)-1]["cache_control"] = ephemeral
+			tools[len(tools)-1]["cache_control"] = mark
 		}
 		if r.WebSearch {
 			tools = append(tools, map[string]any{"type": "web_search_20250305", "name": "web_search", "max_uses": 5})

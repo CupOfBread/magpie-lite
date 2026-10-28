@@ -101,7 +101,9 @@ Each page moves in a commit of its own, whole: its code into
 says from i18n.js into its `i18n.js` (a key app.js, another page, index.html
 or Go also says stays in i18n.js). It stays so after: `i18n-keys`' "a
 plugin's words are its own" fails when anything outside a plugin's folder
-says one of its words, which goes back to i18n.js.
+says one of its words, which goes back to i18n.js. A word inside a longer
+one doesn't count: a comment's "fetchClaudeRuns asks" doesn't say "Runs
+as" (#3897).
 
 - **Sessions** (`plugins/sessions`, `Client: i18n.js, sessions.css,
   client.js`): the page that was `sessions.js`, its markup all drawn by its

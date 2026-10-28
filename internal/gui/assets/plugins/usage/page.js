@@ -3417,6 +3417,7 @@ function renderSessTools() {
     top.append(r);
   }
   cols.append(top);
+  queueMicrotask(() => sessLineUp(top));
 
   const side = el("div", "sess-tools-side");
   // by kind: one bar of every call, and each kind's count
@@ -3500,6 +3501,25 @@ function renderSessSkills() {
   }
   if (su.count > su.top.length) body.append(el("div", "sess-more", t("+{n} more", { n: su.count - su.top.length })));
   box.append(body);
+  sessLineUp(body);
+}
+
+// sessLineUp gives every row of a card of bars the columns of the widest:
+// each row is a grid of its own (#3955), so each column's width is read
+// with the rows at their natural width and set on the card as --sb<i>. The
+// widths don't change with the window's, so a card is measured once, when
+// it is first shown
+const sessSeen = new ResizeObserver((es) => es.forEach((e) => { if (e.contentRect.width) { sessSeen.unobserve(e.target); sessLineUp(e.target); } }));
+function sessLineUp(box) {
+  if (!box.isConnected) return;
+  if (!box.offsetWidth) return sessSeen.observe(box);
+  const rows = [...box.querySelectorAll(box.classList.contains("sess-skills") ? ":scope > .sess-skill > .line" : ":scope > .sess-bar")];
+  for (const p of [...box.style]) if (p.startsWith("--sb")) box.style.removeProperty(p);
+  box.classList.add("fit");
+  const w = [];
+  for (const r of rows) [...r.children].forEach((c, i) => { w[i] = Math.max(w[i] || 0, c.getBoundingClientRect().width); });
+  box.classList.remove("fit");
+  w.forEach((x, i) => box.style.setProperty("--sb" + i, Math.ceil(x) + "px"));
 }
 
 // sessBars is a card of folders or models as bars of the tokens each took;
@@ -3529,6 +3549,7 @@ function sessBars(box, title, items, cur, choose, name) {
   if (!items.length) body.append(el("div", "sess-none", t("Nothing in this range.")));
   if (items.length > shown.length) body.append(el("div", "sess-more", t("+{n} more", { n: items.length - shown.length })));
   box.append(body);
+  sessLineUp(body);
 }
 
 // sessSpent is a session's tokens and cost, as the two right-hand columns

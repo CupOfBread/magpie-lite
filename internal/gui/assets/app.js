@@ -6109,14 +6109,7 @@ function renderProviders() {
   const onList = $("#providers"), offList = $("#offProviders");
   onList.replaceChildren();
   offList.replaceChildren();
-  const offs = providers.providers.filter((p) => p.off).length;
-  onList.hidden = offs === providers.providers.length;
-  $("#offHead").hidden = !offs;
-  offList.hidden = !offs || offFolded;
-  const fold = $("#foldOff");
-  fold.setAttribute("aria-expanded", String(!offFolded));
-  fold.title = t(offFolded ? "Show the providers turned off" : "Fold the providers turned off away");
-  $("#offCount").textContent = offs ? String(offs) : "";
+  $("#foldOff").title = t(offFolded ? "Show the providers turned off" : "Fold the providers turned off away");
   let dialog = null; // the editor, if one is open
   for (const p of providers.providers) {
     const list = p.off ? offList : onList;
@@ -6283,18 +6276,20 @@ function openProviderMenu(anchor, p) {
 // Providers' search (#1614, ququdu: "供应商很多，然后经常需要翻找"): the
 // words typed keep the rows that say them all, on and off alike, matched on
 // the row's own text and on what it doesn't show: its id, preset, addresses,
-// every model's id and name, each account's user and plan, and the keys'
-// names. The ones turned off show unfolded while searching. Escape or
-// clearing the box brings back every row, the fold as it was.
+// each account's user and plan, and the keys' names. The words it doesn't
+// say are one model's it serves, separators aside ("opus 5.5" finds
+// claude-opus-5-5), named under the row (frankdeng, Neo). The ones turned
+// off show unfolded while searching. Escape or clearing the box brings back
+// every row, the fold as it was.
 let pvQuery = "";
 function providerText(p, row) {
   const a = p.account;
   return [row.textContent, p.id, p.name, p.preset, p.host, p.chat, p.responses, p.anthropic, p.gemini,
-    ...(p.models || []).flatMap((m) => [m.id, m.name]),
     a?.user, a?.agentName, a?.plan, ...(a?.logins || []).flatMap((l) => [l.user, l.plan]),
     ...Object.values(p.accountNames || {}), ...(p.keyList || []).map((k) => k.name),
   ].filter(Boolean).join(" ").toLowerCase();
 }
+const pvSq = (s) => (s || "").toLowerCase().replace(/[\s._-]+/g, "");
 function findProviders() {
   const view = $("#view-providers"), q = $("#pvQ"), none = $("#pvNone");
   q.setAttribute("aria-label", t("Find a provider"));
@@ -6304,26 +6299,22 @@ function findProviders() {
   let on = 0, off = 0;
   for (const row of view.querySelectorAll("#providers > .row.provider, #offProviders > .row.provider")) {
     const p = byId.get(row.dataset.id);
-    const hit = !p || words.every((w) => providerText(p, row).includes(w));
+    row.querySelector(".pv-hits")?.remove();
+    const own = p ? providerText(p, row) : "", rest = words.filter((w) => !own.includes(w));
+    const hits = rest.length ? (p?.models || []).filter((m) => m.on && rest.every((w) => (pvSq(m.id) + "|" + pvSq(m.name)).includes(pvSq(w)))).map((m) => m.id) : [];
+    const hit = !p || !rest.length || hits.length;
+    if (hits.length) row.querySelector(".who").append(el("div", "sub pv-hits", t("Serves {models}", { models: hits.join(", ") })));
     row.hidden = !hit;
     if (hit) p?.off ? off++ : on++;
   }
-  const offs = providers.providers.filter((p) => p.off).length;
   // while searching, the ones off that match show, whatever the fold says
-  const fold = $("#foldOff");
+  const fold = $("#foldOff"), offs = pvQuery ? off : providers.providers.filter((p) => p.off).length;
   fold.disabled = !!pvQuery;
   fold.setAttribute("aria-expanded", String(!!pvQuery || !offFolded));
-  if (pvQuery) {
-    $("#providers").hidden = !on;
-    $("#offHead").hidden = !off;
-    $("#offProviders").hidden = !off;
-    $("#offCount").textContent = off ? String(off) : "";
-  } else {
-    $("#providers").hidden = offs === providers.providers.length;
-    $("#offHead").hidden = !offs;
-    $("#offProviders").hidden = !offs || offFolded;
-    $("#offCount").textContent = offs ? String(offs) : "";
-  }
+  $("#providers").hidden = pvQuery ? !on : offs === providers.providers.length;
+  $("#offHead").hidden = !offs;
+  $("#offProviders").hidden = !offs || !pvQuery && offFolded;
+  $("#offCount").textContent = offs || "";
   none.hidden = !pvQuery || on + off > 0;
   none.textContent = none.hidden ? "" : t("No provider matches “{q}”", { q: q.value.trim() });
 }
@@ -17908,12 +17899,9 @@ function panelAge() {
 }
 if (mode === "panel") setInterval(panelAge, 30000);
 
-// quotaFit puts every window's count under its name once one's doesn't fit
-// beside it, so windows side by side read alike rather than one count up
-// by its name and the next a line below (#90). Stacked or not changes the
-// windows' own height, so it is decided on the next frame: changed in the
-// observer's own call, the observer is owed that change in the same frame,
-// which WebKit reports as a ResizeObserver loop (account-mask's page error).
+// quotaFit stacks every window's count once one's doesn't fit (#90) and
+// lines up the bars beside each other (#3955), on the next frame: in the
+// observer's call WebKit reports a ResizeObserver loop (account-mask).
 const quotaFitting = new Set();
 const quotaFit = new ResizeObserver((es) => {
   if (!quotaFitting.size) requestAnimationFrame(fitQuotas);
@@ -17932,6 +17920,10 @@ function fitQuota(g) {
     return name.getBoundingClientRect().width + 6 + wide(n) > l.clientWidth;
   });
   g.classList.toggle("stacked", wraps);
+  const ls = g.querySelectorAll(":scope > .quota > .quota-labels"), top = {}, h = (l) => l.getBoundingClientRect().height;
+  for (const l of ls) l.style.minHeight = "";
+  for (const l of ls) top[l.offsetTop] = Math.max(top[l.offsetTop] || 0, h(l));
+  for (const l of ls) if (top[l.offsetTop] > h(l) + 0.5) l.style.minHeight = top[l.offsetTop] + "px";
 }
 
 // balanceRow: what is left on an account, as a figure; a balance field
@@ -18864,7 +18856,6 @@ if (!web) addEventListener("keydown", (e) => {
 // keep the family/style controls usable while the shared save queue drains.
 let fontList = null, fontListError = false, fontFlight = null, fontRevision = 0;
 const fontDrafts = {};
-const fontsOn = !web || window.bootPrefs?.fonts;
 function fontChoices(s) {
   if (web) return { ...s, ...window.desktopFonts.own() };
   return { ...s, ...Object.fromEntries(Object.entries(fontDrafts).map(([k, d]) => [k, d.value])) };
@@ -18880,7 +18871,7 @@ window.receiveFonts = (s) => {
   if (prefs && view === "settings") renderFonts(prefs);
 };
 async function loadFonts(refresh = false) {
-  if (!fontsOn || fontFlight || (fontList !== null && !refresh)) return fontFlight;
+  if (fontFlight || (fontList !== null && !refresh)) return fontFlight;
   fontListError = false;
   fontFlight = api("fonts" + (refresh ? "?refresh=1" : ""))
     .then((list) => {
@@ -18918,7 +18909,7 @@ function renderFonts(s) {
   const current = fontChoices(s);
   for (const [key, id, label] of [["uiFont", "uiFontRow", "Interface font"], ["codeFont", "codeFontRow", "Code font"]]) {
     const row = $("#" + id);
-    if (row.hidden = !fontsOn) continue;
+    row.hidden = false;
     const chosen = current[key], family = fontList?.find((f) => f.name === chosen?.family);
     const missing = chosen && !window.desktopFonts.available(chosen);
     const note = row.querySelector(".font-note");
@@ -19061,7 +19052,7 @@ function renderLoginAllow(s) {
 
 async function loadSettings() {
   const since = prefsWrites;
-  if (fontsOn && fontList === null && !fontListError) loadFonts();
+  if (fontList === null && !fontListError) loadFonts();
   if (window.bootPrefs?.omarchy && !barIcon) api("omarchy/widget").then((b) => { barIcon = b; renderBarIcon(); }).catch(() => {});
   const s = await api("settings");
   if (!prefsSettled(since) && prefs) return; // the save draws the page when it's in
