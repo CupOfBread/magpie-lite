@@ -27,6 +27,22 @@ import (
 // index names.
 func fakeDist(t *testing.T, pkgs map[string][]string, tamper bool) {
 	t.Helper()
+	u := distServer(t, pkgs, tamper)
+	forgetDist := func() {
+		distMu.Lock()
+		distIdx, distAt, distOK = nil, time.Time{}, false
+		distMu.Unlock()
+	}
+	base := distBase
+	distBase = u
+	forgetDist()
+	t.Cleanup(func() { distBase = base; forgetDist() })
+}
+
+// distServer serves a copy of the dist branch, as fakeDist describes, and
+// is its address.
+func distServer(t *testing.T, pkgs map[string][]string, tamper bool) string {
+	t.Helper()
 	files := map[string][]byte{}
 	idx := map[string]any{}
 	for name, versions := range pkgs {
@@ -56,15 +72,7 @@ func fakeDist(t *testing.T, pkgs map[string][]string, tamper bool) {
 		http.NotFound(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	forgetDist := func() {
-		distMu.Lock()
-		distIdx, distAt, distOK = nil, time.Time{}, false
-		distMu.Unlock()
-	}
-	base := distBase
-	distBase = srv.URL
-	forgetDist()
-	t.Cleanup(func() { distBase = base; forgetDist() })
+	return srv.URL
 }
 
 // npmHasNothing is an npm registry that has no package at all: a new

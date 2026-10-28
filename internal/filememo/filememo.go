@@ -162,15 +162,26 @@ func Look(path string) {
 // bytes). kind tells apart two parses of
 // one file. What it returns is shared: the caller must not change it.
 func Read[T any](kind, path string, parse func([]byte) (T, error)) (T, error) {
+	return read(kind, path, parse, true)
+}
+
+// ReadNow is Read with the file looked at even while a request holds what
+// was read (Hold): for bytes a write is made from, which a write another
+// process made inside the held second would otherwise be lost under.
+func ReadNow[T any](kind, path string, parse func([]byte) (T, error)) (T, error) {
+	return read(kind, path, parse, false)
+}
+
+func read[T any](kind, path string, parse func([]byte) (T, error), held bool) (T, error) {
 	var zero T
 	key := kind + "\x00" + path
 	mu.Lock()
 	e, ok := seen[key]
-	if ok && holds > 0 && e.raw == nil && e.gen == gen && time.Since(e.checked) < heldFor {
+	if ok && held && holds > 0 && e.raw == nil && e.gen == gen && time.Since(e.checked) < heldFor {
 		mu.Unlock()
 		return e.v.(T), nil
 	}
-	if m, ok := missing[path]; ok && holds > 0 && m.gen == gen && time.Since(m.checked) < heldFor {
+	if m, ok := missing[path]; ok && held && holds > 0 && m.gen == gen && time.Since(m.checked) < heldFor {
 		mu.Unlock()
 		return zero, m.err
 	}

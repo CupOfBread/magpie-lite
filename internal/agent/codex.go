@@ -543,6 +543,11 @@ func codexIn(at place) *Agent {
 	// Codex's background compaction, as Settings has it (#2490): written
 	// where Codex is routed through magpie, taken back where it isn't
 	asyncCompaction := func(routed bool) error {
+		// a compact limit tune wrote here before goes to Long
+		// conversations, the one window magpie keeps (7eleven)
+		if at.id == "" && at.spell == nil {
+			tuneMigrateCodex(at.home)
+		}
 		s := settings.Load()
 		on := s.CodexAsyncCompact && routed
 		return codexAsyncSync(path, at.key("codex.async"), routed, s.CodexAsyncCompact, s.CodexAsyncCompactPercent, on && codexAsyncTableOK(at))

@@ -67,6 +67,15 @@ func chinaFirst(raw string) string {
 	return ""
 }
 
+// ChinaFirst is the mirror in China the 「国内镜像」 switch asks before raw,
+// "" with the switch off or when no mirror serves raw.
+func ChinaFirst(raw string) string {
+	if !China() {
+		return ""
+	}
+	return chinaFirst(raw)
+}
+
 // modelMirror is hf-mirror's copy of one of the local masking models'
 // files (internal/pii), "" for anything else of Hugging Face's. Those
 // files are fetched at the revision their sha256 were pinned at, and what

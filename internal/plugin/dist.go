@@ -18,6 +18,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/yetone/magpie/internal/source"
+	"github.com/yetone/magpie/internal/update"
 )
 
 // The community repo's dist branch: every version of each
@@ -76,10 +79,8 @@ func distPkg(ctx context.Context, name string) *distPackage {
 	defer distMu.Unlock()
 	stale := distIdx == nil || time.Since(distAt) > distKeep
 	if stale && (distOK || distAt.IsZero() || time.Since(distAt) > distWait) {
-		b, err := fetchJSONFaithful(ctx, distBase+"/index.json", 32<<20)
-		var idx distIndex
-		if err == nil && json.Unmarshal(b, &idx) == nil {
-			distIdx, distOK = &idx, true
+		if idx, err := readDistIndex(ctx); err == nil {
+			distIdx, distOK = idx, true
 		} else {
 			// what was read last stays, until a read works
 			distOK = false
@@ -94,6 +95,116 @@ func distPkg(ctx context.Context, name string) *distPackage {
 		return nil
 	}
 	return &p
+}
+
+var (
+	// distMirror is the copy of the branch's file at u asked before it,
+	// the 「国内镜像」 switch's jsDelivr, "" when none is (moved by tests)
+	distMirror = source.ChinaFirst
+	// distGrace is how much longer GitHub's own index.json is waited for
+	// once the mirror's has come: where GitHub can't be reached, it isn't
+	// waited for to the end of the request's time
+	distGrace = 5 * time.Second
+)
+
+// readDistIndex reads the branch's index.json. jsDelivr's copy, asked first
+// with the 「国内镜像」 switch on, is the branch as it was when the edge
+// cached it, up to 12 hours before (s-maxage=43200): a Gcore edge served
+// CodeArts' 0.2.3 for hours after 0.2.4 was packed, and with npm not having
+// the package at all, the hourly update, Check for updates and Update each
+// found nothing newer and the page said every plugin was up to date
+// (star21321321124 on Discord). So GitHub's own copy is asked beside it and
+// the two are merged (mergeDist). Each version still comes with the
+// sha512 its own copy of the branch names, which installDist checks the
+// tarball against, as it did. Where GitHub can't be reached, the mirror's
+// alone is read, as before.
+func readDistIndex(ctx context.Context) (*distIndex, error) {
+	u := distBase + "/index.json"
+	m := distMirror(u)
+	if m == "" {
+		return parseDistIndex(fetchJSONFrom(ctx, u, 32<<20, source.DoOfficial))
+	}
+	type read struct {
+		idx *distIndex
+		err error
+	}
+	octx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	official, mirror := make(chan read, 1), make(chan read, 1)
+	go func() {
+		idx, err := parseDistIndex(fetchJSONFrom(octx, u, 32<<20, source.DoOfficial))
+		official <- read{idx, err}
+	}()
+	go func() {
+		idx, err := parseDistIndex(fetchJSONFrom(ctx, m, 32<<20, source.DoOfficial))
+		mirror <- read{idx, err}
+	}()
+	mr := <-mirror
+	var or read
+	if mr.err != nil {
+		or = <-official
+	} else {
+		t := time.NewTimer(distGrace)
+		select {
+		case or = <-official:
+		case <-t.C:
+			cancel()
+			or = <-official
+		}
+		t.Stop()
+	}
+	switch {
+	case or.err != nil && mr.err != nil:
+		return nil, errors.Join(or.err, mr.err)
+	case or.err != nil:
+		return mr.idx, nil
+	case mr.err != nil:
+		return or.idx, nil
+	}
+	return mergeDist(or.idx, mr.idx), nil
+}
+
+func parseDistIndex(b []byte, err error) (*distIndex, error) {
+	if err != nil {
+		return nil, err
+	}
+	var idx distIndex
+	if err := json.Unmarshal(b, &idx); err != nil {
+		return nil, err
+	}
+	return &idx, nil
+}
+
+// mergeDist is two copies of the branch's index as one: every version
+// either names (the branch only ever gains versions), a's entry where both
+// do, and each package's newer latest, with the README of the copy that
+// named it.
+func mergeDist(a, b *distIndex) *distIndex {
+	out := &distIndex{Packages: map[string]distPackage{}}
+	for name, p := range a.Packages {
+		out.Packages[name] = p
+	}
+	for name, pb := range b.Packages {
+		pa, ok := out.Packages[name]
+		if !ok {
+			out.Packages[name] = pb
+			continue
+		}
+		vs := make(map[string]distVersion, len(pa.Versions)+len(pb.Versions))
+		for v, x := range pb.Versions {
+			vs[v] = x
+		}
+		for v, x := range pa.Versions {
+			vs[v] = x
+		}
+		p := pa
+		if update.Newer(pb.Latest, pa.Latest) {
+			p.Latest, p.Readme = pb.Latest, pb.Readme
+		}
+		p.Versions = vs
+		out.Packages[name] = p
+	}
+	return out
 }
 
 // distInfo is the package's newest version on the dist branch, as npm's
