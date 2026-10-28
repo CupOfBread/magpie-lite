@@ -474,34 +474,12 @@ func CodexNativeHidden() map[string]bool {
 	}
 	off := ModelOff("codex")
 	out := map[string]bool{}
-	for _, e := range Catalog() {
+	for _, e := range catalogOf("codex") {
 		if CodexOwn(e) && off(e.ID) {
 			out[e.Model] = true
 		}
 	}
 	return out
-}
-
-// CodexNativeUnlisted is the ChatGPT account's own models kept out of the
-// lists agents see, which the backend lists to Codex all the same: every
-// one (all) when the codex provider serves only through routing groups
-// (Provider.Unlisted), and by slug those a routing group keeps out of the
-// lists (Group.Unlists). The gateway drops them from its /models answer as
-// it does the ones hidden; Codex then reaches them only through its groups
-// (#1602). A provider switched off keeps none out: it serves nothing, and
-// its setting is kept for when it is switched on again.
-func CodexNativeUnlisted() (all bool, slugs map[string]bool) {
-	p, ok := find(All(), "codex")
-	all = ok && !p.Off && p.Unlisted
-	for _, e := range Unlisted() {
-		if CodexOwn(e) {
-			if slugs == nil {
-				slugs = map[string]bool{}
-			}
-			slugs[e.Model] = true
-		}
-	}
-	return all, slugs
 }
 
 // CodexOrder is where each model of Codex's list goes when the user put
@@ -519,7 +497,7 @@ func CodexOrder() (map[string]int, bool) {
 		at[id] = i
 	}
 	out := map[string]int{}
-	for _, e := range Catalog() {
+	for _, e := range catalogOf("codex") {
 		i, ok := at[e.ID]
 		if !ok {
 			continue
@@ -562,14 +540,6 @@ func buildCodexListTag(kind string) string {
 		for _, slug := range slices.Sorted(maps.Keys(keep)) {
 			ms = append(ms, catalog.Model{ID: "~picked:" + slug})
 		}
-	}
-	// and those kept out of the lists for routing groups (#1602)
-	all, unlisted := CodexNativeUnlisted()
-	if all {
-		ms = append(ms, catalog.Model{ID: "~unlisted"})
-	}
-	for _, slug := range slices.Sorted(maps.Keys(unlisted)) {
-		ms = append(ms, catalog.Model{ID: "~unlisted:" + slug})
 	}
 	// and the models the user disabled (#1867)
 	for _, pat := range DisabledModels() {

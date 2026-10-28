@@ -264,18 +264,13 @@ func spawnChoices(r *http.Request, lead string, codexPath bool) []spawnChoice {
 		// and those the codex provider's picks leave out, every one under
 		// Usage only (#2530), as codexModels leaves them out of its list
 		keep, narrowed := provider.CodexNativePicked()
-		// and the ones kept for routing groups (#1602)
-		all, unlisted := provider.CodexNativeUnlisted()
-		if codexOwnOnly() {
-			all, unlisted = false, nil
-		}
 		type own struct {
 			spawnChoice
 			at int
 		}
 		var owns []own
 		for slug, e := range codexcat.CacheEntries() {
-			if v, _ := e["visibility"].(string); v != "list" || hidden[slug] || narrowed && !keep[slug] || all || unlisted[slug] {
+			if v, _ := e["visibility"].(string); v != "list" || hidden[slug] || narrowed && !keep[slug] {
 				continue
 			}
 			name, _ := e["display_name"].(string)

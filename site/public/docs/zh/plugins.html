@@ -692,7 +692,7 @@ magpie plugin options model-map '{"mapping": {"fast": "deepseek/deepseek-chat"}}
     <h3 id="middleware-options"><a class="anchor" href="#middleware-options">选项</a></h3>
     <p>中间件从 <code>ctx.options</code> 读取设置，也就是 <code>plugins.json</code> 里它那一项的 <code>options</code>。可以在<span class="ui">插件 → 已安装</span>里点中间件的<span class="ui">选项</span>按钮，在它那一行里以 JSON 编辑；也可以用 <code>magpie plugin options &lt;名字&gt; '&lt;json&gt;'</code>（<code>off</code> 清除）。名字可以是包名、spec 或短名：<code>@magpie-community/middleware-model-map</code> 的短名是 <code>model-map</code>。从下一个请求起生效。包可以在 <code>package.json</code> 里用 <code>"magpie": { "options": { … } }</code> 给出建议的选项：没有设置时编辑框以它为起点，但在你保存之前，中间件运行时没有选项。</p>
     <h3>运行方式</h3>
-    <p>中间件不在 Bun 里运行，而是在网关自己的进程里，用 Go 写的 JavaScript 引擎 <a href="https://github.com/Calcium-Ion/moejs">moejs</a> 运行。原因是一个回复会流式传输成千上万个事件，每个事件都要等它处理完。在一个事件上调用一次钩子大约耗时 1 微秒，而和 Bun 往返一次要几十微秒。每个中间件只编译一次，每个请求有自己的运行时，所以请求之间可以并行，同一个请求的各个钩子共享 <code>ctx.state</code>。</p>
+    <p>中间件不在 Bun 里运行，而是在网关自己的进程里，用 Go 写的 JavaScript 引擎 <a href="https://github.com/MoeForge/moejs">moejs</a> 运行。原因是一个回复会流式传输成千上万个事件，每个事件都要等它处理完。在一个事件上调用一次钩子大约耗时 1 微秒，而和 Bun 往返一次要几十微秒。每个中间件只编译一次，每个请求有自己的运行时，所以请求之间可以并行，同一个请求的各个钩子共享 <code>ctx.state</code>。</p>
     <ul>
       <li><b>声明方式。</b>在 <code>package.json</code> 里写 <code>"magpie": { "middleware": "./mw.js" }</code>，或者用一个名为 <code>*.middleware.js</code>（或 <code>.mjs</code>）的单文件。没有 <code>main</code> 也没有 <code>exports</code> 的包只是中间件，插件宿主不会加载它；两者都有的包既是供应商插件，也是中间件。</li>
       <li><b>导入。</b>只能用相对路径导入插件目录里的文件。这里没有 <code>node_modules</code>，用到的依赖请打包进文件。</li>

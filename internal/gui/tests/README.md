@@ -1,5 +1,10 @@
 # Dropdown browser regression
 
+`modal-backdrop.test.cjs` checks the modal's computed backdrop filter using
+the real stylesheet and platform marker: Windows desktop windows and panels
+keep the dimming veil without filtering, while browser pages, macOS and Linux
+keep the existing effect. Both Chromium and WebKit; no network or live config.
+
 `plugin-gateway.test.cjs` checks gateway-only plugin identification, the existing
 JSON options editor and aggregate diagnostics in all five languages on Chromium
 and WebKit. It uses local API fixtures, saves options through the real page, and

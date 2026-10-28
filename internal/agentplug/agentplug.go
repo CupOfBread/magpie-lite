@@ -49,7 +49,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Calcium-Ion/moejs"
+	"github.com/MoeForge/moejs"
 	"github.com/yetone/magpie/internal/jsmod"
 	"github.com/yetone/magpie/internal/plugin"
 )

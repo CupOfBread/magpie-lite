@@ -1076,7 +1076,7 @@ export function onEvent(ev, ctx) {
 }
 ```
 
-Middleware runs inside the gateway in [moejs](https://github.com/Calcium-Ion/moejs),
+Middleware runs inside the gateway in [moejs](https://github.com/MoeForge/moejs),
 a JavaScript engine written in Go (about a microsecond a streamed event),
 not on Bun: no timers, `fetch` or Node APIs, and imports only of files
 beside it. A hook that throws or takes too long (250 ms a request, 50 ms an

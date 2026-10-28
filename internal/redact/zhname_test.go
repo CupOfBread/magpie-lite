@@ -61,6 +61,15 @@ func TestChineseNames(t *testing.T) {
 		{"和平时一样，周五发版。", nil, []string{"周五", "和平"}},
 		{"方总结一下：说明文档里要写清楚安装步骤。", nil, []string{"方总结", "说明"}},
 		{"运行测试的时候，内存一直在涨。签名和工具调用都会保留。", nil, []string{"签名和工具"}},
+		// xuanwo on X: words of a report, masked as 关键, 易触 and 边界
+		{"### 关键发现：5 组 bot/人类重复 PR", nil, []string{"关键发现"}},
+		{"`gh pr view` 易触发 GraphQL rate limit", nil, []string{"易触发"}},
+		{"\n\n先读判断和边界，仅当来源", nil, []string{"和边界，"}},
+		{"打开文件之前，边界检查失败。", nil, []string{"边界检查"}},
+		// and names around the same cues still are
+		{"### 张伟发了个消息", []string{"张伟"}, []string{"发了个消息"}},
+		{"我和张伟，还有他。", []string{"张伟"}, []string{"我和"}},
+		{"这件事。 李娜说过。", []string{"李娜"}, []string{"说过"}},
 	} {
 		out, _ := Mask(c.s, o)
 		for _, n := range c.names {

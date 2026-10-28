@@ -187,6 +187,13 @@ func zhName(s string, i int) (a, b int, ok bool) {
 	// (建国路), unless a cue ends there
 	before := s[:i]
 	role, verb := endsAny(before, zhRoles, true), endsAny(before, zhBefore, false)
+	// 和 and 与 join like to like: a person after one where a person is
+	// before it (吴敏和郑浩, 我和张伟), not 判断和边界
+	for _, j := range []string{"和", "与"} {
+		if t, ok := strings.CutSuffix(before, j); ok && verb {
+			verb = personBefore(t)
+		}
+	}
 	start := sentenceStart(before)
 	if !role && !verb && !start {
 		return 0, 0, false
@@ -202,7 +209,7 @@ func zhName(s string, i int) (a, b int, ok bool) {
 	// the longest that ends where something after it says so
 	for k := len(ends) - 1; k >= 0; k-- {
 		e := ends[k]
-		if after := s[e:]; startsAny(after, zhAfter) {
+		if after := s[e:]; startsAny(after, zhAfter) && !wordAfter(after) {
 			return i, e, true
 		} else if (role || verb) && endsWord(after) {
 			return i, e, true
@@ -257,13 +264,51 @@ func endsWord(s string) bool {
 }
 
 // sentenceStart says a name may start after s: s is empty or ends in
-// punctuation or a space.
+// punctuation, spaces after it or none. A space after a word or code
+// (`gh pr view` 易触发) is inside a sentence.
 func sentenceStart(s string) bool {
+	s = strings.TrimRight(s, " \t\u3000")
 	if s == "" {
 		return true
 	}
 	r, _ := utf8.DecodeLastRuneInString(s)
-	return unicode.IsPunct(r) || unicode.IsSpace(r) || unicode.IsSymbol(r)
+	return unicode.IsPunct(r) || unicode.IsSpace(r)
+}
+
+// wordAfter says the 发 or 打 that s starts with begins a word (发现,
+// 打开), not the verb a person does (发了个消息, 打给他).
+func wordAfter(s string) bool {
+	for _, v := range []string{"发", "打"} {
+		if t, ok := strings.CutPrefix(s, v); ok {
+			r, _ := utf8.DecodeRuneInString(t)
+			return unicode.Is(unicode.Han, r) && !strings.ContainsRune("了个给过一", r)
+		}
+	}
+	return false
+}
+
+// personBefore says s ends with a pronoun or what may be a name: a
+// surname and one to three characters, no word of zhWords.
+func personBefore(s string) bool {
+	r, _ := utf8.DecodeLastRuneInString(s)
+	if strings.ContainsRune("我你您他她们", r) {
+		return true
+	}
+	rs := []rune(s)
+	for n := 2; n <= 4 && n <= len(rs); n++ {
+		u := string(rs[len(rs)-n:])
+		if !mayStart[rs[len(rs)-n]] || !hasHan(u) {
+			continue
+		}
+		word := false
+		for _, w := range zhWords {
+			word = word || strings.HasPrefix(u, w)
+		}
+		if !word {
+			return true
+		}
+	}
+	return false
 }
 
 // zhTrim is the model's name s[a:b] with what it ran on into cut off: at

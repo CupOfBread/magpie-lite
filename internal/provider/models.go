@@ -2447,12 +2447,32 @@ type Entry struct {
 
 // Catalog lists the routing groups, then every exposed model of every ready
 // provider not kept unlisted. A provider switched off has none in it.
-func Catalog() []Entry {
+func Catalog() []Entry { return catalogKeeping(nil) }
+
+// catalogOf is the catalog agent's lists start from: Catalog, and for
+// Codex the ChatGPT accounts' own models as well when they are kept out
+// of the lists, the codex provider used only through routing groups
+// (Provider.Unlisted) or a group listing alone (Group.Unlists). Codex
+// reaches those on its own sign-in, its app lists them from the ChatGPT
+// backend, and keeping them for routing groups is about magpie's offer to
+// the other agents and /v1/models: Codex's list kept no Codex section, so
+// the app lost GPT while Codex's picker still offered it (士奇 on
+// Discord). The user takes them out of Codex's list there (HiddenModels,
+// PickedModels), which the gateway follows (CodexNativeHidden).
+func catalogOf(agent string) []Entry {
+	if !strings.EqualFold(agent, "codex") {
+		return Catalog()
+	}
+	return catalogKeeping(CodexOwn)
+}
+
+// catalogKeeping is Catalog with the unlisted models keep says, too.
+func catalogKeeping(keep func(Entry) bool) []Entry {
 	entries := providerEntries()
 	out := slices.Clone(groupEntries(entries)) // held: the caller's to change
 	kept := unlistedByGroups(entries)
 	for _, e := range entries {
-		if !e.Provider.Unlisted && !kept[e.ID] {
+		if !e.Provider.Unlisted && !kept[e.ID] || keep != nil && keep(e) {
 			out = append(out, e)
 		}
 	}
