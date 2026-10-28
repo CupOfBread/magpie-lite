@@ -12,7 +12,7 @@ endif
 VERSION ?= $(or $(shell git describe --tags --always --dirty 2>/dev/null | tr -cd 'A-Za-z0-9._+-'),dev)
 LDFLAGS  = -s -w -X main.version=$(VERSION)
 TAGS     = production
-TARGETS  = darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 windows/amd64 windows/arm64 android/arm64
+TARGETS  = darwin/arm64 windows/amd64
 
 # The GUI links the platform webview through cgo, so it is built natively.
 # `nogui` builds the terminal-only magpie, which cross-compiles anywhere.
@@ -99,17 +99,17 @@ release-cli:
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -tags nogui -trimpath -ldflags="$(LDFLAGS)" -o dist/magpie-cli-$$os-$$arch$$ext . || exit 1; \
 	done
 
-# The desktop app for Windows: the system WebView2 needs no cgo, so both
-# arches cross-compile. Linked as a GUI program (no console window), with
+# The desktop app for Windows: the system WebView2 needs no cgo, so it
+# cross-compiles. Linked as a GUI program (no console window), with
 # the icon, version and a DPI-aware manifest from build/windows. It carries
 # magpie.com, the console program a terminal runs for `magpie` and waits
 # for, which it writes beside itself (internal/update/com.go, #3737).
 WINVER = $(shell echo $(VERSION) | sed -E 's/^v//; s/[^0-9.].*//')
 release-windows:
 	@mkdir -p dist
-	@go run github.com/tc-hib/go-winres@v0.3.3 make --in build/windows/winres.json --arch amd64,arm64 --out rsrc \
+	@go run github.com/tc-hib/go-winres@v0.3.3 make --in build/windows/winres.json --arch amd64 --out rsrc \
 		--file-version "$(or $(WINVER),0.0.0)" --product-version "$(or $(WINVER),0.0.0)"
-	@for arch in amd64 arm64; do \
+	@for arch in amd64; do \
 		echo "  windows/$$arch (app)"; \
 		CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -trimpath -ldflags="-s -w" -o internal/update/launcher-$$arch.com ./internal/update/launcher || exit 1; \
 		CGO_ENABLED=0 GOOS=windows GOARCH=$$arch go build -tags production,comlauncher -trimpath -ldflags="$(LDFLAGS) -H windowsgui" -o dist/magpie-windows-$$arch.exe . || exit 1; \
