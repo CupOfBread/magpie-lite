@@ -34,13 +34,39 @@ func openCursorEditorDB(path string) *sql.DB {
 	if db := dbs[path]; db != nil {
 		return db
 	}
-	db, done, err := openCursorStore(path)
+	db, done, err := openCursorEditorStore(path)
 	if err != nil {
 		return nil
 	}
 	db.SetMaxOpenConns(4)
 	dbs[path], dbCleanup[path] = db, done
 	return db
+}
+
+// openCursorEditorStore opens the editor's state.vscdb to read it. While
+// Cursor runs, its own processes share the store as readers of its -wal
+// through its -shm, and magpie reads it as one more, in place: a copy of a
+// store of several GB was written to the temp folder each time Cursor had
+// written since the last, ~10.6 GB every few minutes on Windows, where no
+// clone makes a copy free (Echo-Huang0010, #1988). Nothing magpie shows is
+// read from the store's file times, so a reader's mark in -shm moves no
+// chat; each chat carries its own (lastUpdatedAt). With no -shm beside a
+// live -wal there is no Cursor running to share it with, and it is opened
+// as a chat's store is (openCursorStore).
+func openCursorEditorStore(path string) (*sql.DB, func(), error) {
+	// copies an older magpie left, which no copy made here would sweep
+	cursorSnaps.sweep.Do(sweepCursorSnaps)
+	wal, werr := os.Stat(path + "-wal")
+	_, serr := os.Stat(path + "-shm")
+	if !cursorReadInPlace || werr != nil || wal.Size() == 0 || serr != nil {
+		return openCursorStore(path)
+	}
+	db, err := openSQLite(path, "mode=ro&_pragma=busy_timeout(3000)")
+	if err != nil {
+		return openCursorStore(path)
+	}
+	cursorInPlace.Add(1)
+	return db, func() { db.Close() }, nil
 }
 
 // cursorComposersQuery lists the editor's chats by a range on the key's
@@ -215,7 +241,7 @@ func editorMessages(db *sql.DB, id string, add func(string, string, time.Time) b
 
 func readCursorEditor(path string, add func(string, string, time.Time) bool) error {
 	if dbPath, id, ok := cursorEditorDatabasePath(path); ok {
-		db, done, err := openCursorStore(dbPath)
+		db, done, err := openCursorEditorStore(dbPath)
 		if err != nil {
 			return err
 		}

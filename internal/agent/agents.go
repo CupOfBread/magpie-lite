@@ -17,6 +17,7 @@ import (
 	"github.com/yetone/magpie/internal/appdir"
 	"github.com/yetone/magpie/internal/catalog"
 	"github.com/yetone/magpie/internal/edit"
+	"github.com/yetone/magpie/internal/filememo"
 	"github.com/yetone/magpie/internal/gateway"
 	"github.com/yetone/magpie/internal/proc"
 	"github.com/yetone/magpie/internal/provider"
@@ -59,6 +60,9 @@ func init() {
 // its used-up ChatGPT account (AppOut). Not known when Codex's config
 // can't be read.
 func codexAppRoute() (route string, out, known bool) {
+	// asked every 3s for as long as magpie runs: the config looked at once
+	// for its keys, not once for each (#1665)
+	defer filememo.Hold()()
 	home, _ := homes()
 	a := codex(home)
 	if _, err := os.ReadFile(a.Path); err != nil && !errors.Is(err, fs.ErrNotExist) {
