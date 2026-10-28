@@ -6,7 +6,7 @@ name: privacy-filter
 
 on:
   push:
-    branches: [main, "pf/**"]
+    branches: [lamburger, "pf/**"]
     paths: ["native/privacy-filter/**", ".github/workflows/privacy-filter.yml"]
     tags: ["pf-v*"]
   pull_request:
