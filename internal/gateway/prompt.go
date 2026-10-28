@@ -725,6 +725,7 @@ var (
 	injected = []string{
 		"<system-reminder", "<environment_context>", "<user_instructions>", "<turn_aborted>",
 		"<user_shell_command>", "<subagent_notification>", "<in-app-browser-context",
+		"<external_codex_apps_open_page>",
 		"<task-notification>", "<subagent-notification>", "<plugin_reference>",
 		"Available agent types for the Agent tool:", "Available agent types and the tools they have access to:",
 		"New agent types are now available for the Agent tool:",
